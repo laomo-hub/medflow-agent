@@ -65,3 +65,9 @@ class Settings(BaseSettings):
 @lru_cache  # lru 把对象实例保存到内存中。这是一种单例的实现
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_llm(temperature: float = 0.3):
+    """Compatibility entry point for the ordinary worker model factory."""
+    from src.infra.llm import get_chat_llm
+    return get_chat_llm(temperature=temperature)
