@@ -68,6 +68,12 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 聊天模型为 `deepseek-flash`，显式关闭 thinking。Supervisor 与摘要模型保持温度未指定，保留原工具绑定行为；只在具体专项模型需要时单独指定温度。
 
+## 智慧问诊内核
+
+问诊内核位于 `src/agents/inquiry/`，包含患者上下文、症状标准化、图谱候选、多轮状态与挂号模拟移交。
+
+初始化症状向量索引：`python scripts/init_symptom_index.py`，每批保持 **20** 条；该命令调用配置的向量化服务。此 PR 提供工作流模块，统一 Chat 路由在后续 PR 接入。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
