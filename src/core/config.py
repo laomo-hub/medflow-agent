@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "text-embedding-v3"
     VL_MODEL: str = "qwen-vl"
 
+    MINERU_API_URL: str = ""
+    MINERU_BACKEND: str = ""
+    MINERU_TIMEOUT: int = 60
+
     LOG_LEVEL: str = "DEBUG"
     LOG_DIR: str = "logs"
 
