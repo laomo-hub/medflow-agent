@@ -138,3 +138,27 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Local migration snapshots (may contain .env)
+.backups/
+
+# Local development notes
+/task_plan.md
+/findings.md
+/progress.md
+
+# Local data files
+/data/
+
+# Environment variants (keep the public template)
+.env.*
+!.env.example
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local migrations and tests
+/alembic/
+/test/
