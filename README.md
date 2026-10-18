@@ -78,6 +78,12 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 `src/agents/knowledge/` 提供 MinerU 解析、文档分块、Milvus 入库、文档/图谱检索及检索增强模块。使用解析服务前配置 `MINERU_API_URL`、`MINERU_BACKEND` 和 `MINERU_TIMEOUT`。检索模块可单独导入，专项 Agent 将在下一 PR 接入。
 
+## 知识问答 Agent
+
+知识 Agent 提供文档、图谱、SQL、多通道融合与处方审核工具，并包含反馈、通知和会话辅助模块。SQL 查询需要传入数据库会话；默认未传入时会返回连接不可用提示。
+
+新部署运行 `python -m scripts.init_schema` 可预览包括 `knowledge_feedback`、`knowledge_notifications` 的表结构，显式加 `--apply` 创建缺失表。此操作不会自动执行。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
