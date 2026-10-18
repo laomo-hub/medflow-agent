@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    APP_NAME: str = "tiangong-agent"
+    APP_NAME: str = "medflow-agent"
     APP_ENV: str = "dev"
     APP_DEBUG: bool = True
 

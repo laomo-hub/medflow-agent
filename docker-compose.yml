@@ -1,5 +1,7 @@
+name: medflow-agent
+
 # ============================================================
-# 天宫医疗智能体 (tiangong-agent) — 基础设施层
+# MedFlow 医疗智能体 (medflow-agent) — 基础设施层
 # 包含：PostgreSQL / Redis / Milvus / Neo4j
 # 启动：docker compose up -d
 # 停止：docker compose down
@@ -14,7 +16,7 @@ services:
   # ----------------------------------------------------------
   postgres:
     image: postgres:17.9
-    container_name: tiangong-postgres
+    container_name: medflow-postgres
     restart: always
     environment:
       POSTGRES_USER: medical
@@ -25,7 +27,7 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - tiangong-net
+      - medflow-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medical -d medical_db"]
       interval: 10s
@@ -41,7 +43,7 @@ services:
 # ----------------------------------------------------------
   redis:
     image: redis/redis-stack:7.4.0-v3
-    container_name: tiangong-redis
+    container_name: medflow-redis
     restart: always
     environment:
       REDIS_ARGS: "--appendonly yes"
@@ -51,7 +53,7 @@ services:
       - "6379:6379"   # Redis 主端口
       - "8001:8001"   # RedisInsight 可视化 Web UI
     networks:
-      - tiangong-net
+      - medflow-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -62,7 +64,7 @@ services:
   # Milvus 依赖：etcd — 元数据存储
   # ----------------------------------------------------------
   etcd:
-    container_name: tiangong-milvus-etcd
+    container_name: medflow-milvus-etcd
     image: quay.io/coreos/etcd:v3.5.25
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
@@ -77,14 +79,14 @@ services:
     volumes:
       - ./docker/etcd_data:/etcd
     networks:
-      - tiangong-net
+      - medflow-net
 
   # ----------------------------------------------------------
   # Milvus 依赖：MinIO — 对象存储（存向量数据文件）
   # ----------------------------------------------------------
   minio:
     image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-    container_name: tiangong-minio
+    container_name: medflow-minio
     restart: always
     environment:
       MINIO_ACCESS_KEY: minioadmin
@@ -96,7 +98,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     networks:
-      - tiangong-net
+      - medflow-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -108,7 +110,7 @@ services:
   # 存储：文档 Embedding（RAG 语义检索）、患者历史长期记忆
   # ----------------------------------------------------------
   milvus:
-    container_name: tiangong-milvus
+    container_name: medflow-milvus
     image: milvusdb/milvus:v2.6.13
     command: ["milvus", "run", "standalone"]
     security_opt:
@@ -126,7 +128,7 @@ services:
       - etcd
       - minio
     networks:
-      - tiangong-net
+      - medflow-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -134,14 +136,16 @@ services:
       retries: 3
   # Milvus  可视化客户端
   attu:
-    container_name: tiangong-attu
+    container_name: medflow-attu
     image: zilliz/attu:latest
     environment:
-      MILVUS_URL: 172.25.112.1:19530
+      MILVUS_URL: milvus:19530
     ports:
       - "3000:3000"
     depends_on:
       - "milvus"
+    networks:
+      - medflow-net
   # ----------------------------------------------------------
   # Neo4j — 图数据库
   # 存储：医学知识图谱（疾病-症状-药物-科室 关系网络）
@@ -149,7 +153,7 @@ services:
   # ----------------------------------------------------------
   neo4j:
     image: neo4j:5.20
-    container_name: tiangong-neo4j
+    container_name: medflow-neo4j
     restart: always
     environment:
       NEO4J_AUTH: neo4j/medical123
@@ -162,7 +166,7 @@ services:
       - "7474:7474"   # Web UI
       - "7687:7687"   # Bolt 协议（SDK 连接）
     networks:
-      - tiangong-net
+      - medflow-net
     healthcheck:
       test: ["CMD", "neo4j", "status"]
       interval: 30s
@@ -185,5 +189,5 @@ volumes:
 # 网络
 # ----------------------------------------------------------
 networks:
-  tiangong-net:
+  medflow-net:
     driver: bridge

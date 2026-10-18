@@ -53,7 +53,7 @@ class MilvusStore(BaseStore):
 
     用法：
         store = MilvusStore(
-            alias="tiangong_milvus",
+            alias="medflow_milvus",
             embeddings=your_embedding_model,
             dims=1536,
         )
