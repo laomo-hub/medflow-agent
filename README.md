@@ -1,6 +1,6 @@
 # MedFlow Agent（医流智能助手）
 
-面向医疗场景的智能体开发项目。本分支先整理基础设施、运行配置和初始化入口，后续 PR 逐步加入专项 Agent 与 Chat API。
+面向医疗场景的智能体开发项目。整合智慧问诊、知识问答与 Supervisor 分流；报告、药物及运营 Worker 目前保留模拟能力。
 
 仓库：<https://github.com/laomo-hub/medflow-agent>
 
@@ -62,7 +62,7 @@ python scripts/init_neo4j.py
 uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-访问 <http://localhost:8000/docs>，通过 `GET /health`、`GET /health/deps` 检查服务及数据库连接。Chat API 将在后续编排 PR 接入。
+访问 <http://localhost:8000/docs>，通过 `GET /health`、`GET /health/deps` 检查服务及数据库连接。Chat API 已接入：`POST /api/v1/chat` 与 `POST /api/v1/chat/stream`。
 
 ## 聊天模型兼容配置
 
@@ -72,17 +72,27 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 问诊内核位于 `src/agents/inquiry/`，包含患者上下文、症状标准化、图谱候选、多轮状态与挂号模拟移交。
 
-初始化症状向量索引：`python scripts/init_symptom_index.py`，每批保持 **20** 条；该命令调用配置的向量化服务。此 PR 提供工作流模块，统一 Chat 路由在后续 PR 接入。
+初始化症状向量索引：`python scripts/init_symptom_index.py`，每批保持 **20** 条；该命令调用配置的向量化服务。问诊内核由统一 Chat 路由接入，活跃问诊根据 Redis 状态继续执行。
 
 ## 文档入库与检索
 
-`src/agents/knowledge/` 提供 MinerU 解析、文档分块、Milvus 入库、文档/图谱检索及检索增强模块。使用解析服务前配置 `MINERU_API_URL`、`MINERU_BACKEND` 和 `MINERU_TIMEOUT`。检索模块可单独导入，专项 Agent 将在下一 PR 接入。
+`src/agents/knowledge/` 提供 MinerU 解析、文档分块、Milvus 入库、文档/图谱检索及检索增强模块。使用解析服务前配置 `MINERU_API_URL`、`MINERU_BACKEND` 和 `MINERU_TIMEOUT`。检索模块可单独导入，也由知识问答 Agent 的工具调用。
 
 ## 知识问答 Agent
 
 知识 Agent 提供文档、图谱、SQL、多通道融合与处方审核工具，并包含反馈、通知和会话辅助模块。SQL 查询需要传入数据库会话；默认未传入时会返回连接不可用提示。
 
 新部署运行 `python -m scripts.init_schema` 可预览包括 `knowledge_feedback`、`knowledge_notifications` 的表结构，显式加 `--apply` 创建缺失表。此操作不会自动执行。
+
+## Chat 使用与本地验证
+
+```json
+{"user_id":"1","session_id":"medflow-demo-001","message":"我肚子有点不舒服"}
+```
+
+活跃问诊由路由恢复 Redis 状态继续处理，其他请求进入 Supervisor。报告、药物及运营 Worker 仍是模拟入口；不代表完整业务实现。
+
+本地 `test/` 按项目忽略策略不随仓库发布；维护者可运行 `python -m pytest test/test_flash_thinking.py -q` 做离线回归，实际 PR 验证结果记录在 PR 说明。长期记忆样例输入保留“糖尿病史”。
 
 ## 来源与许可证
 
