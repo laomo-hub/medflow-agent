@@ -64,6 +64,10 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 访问 <http://localhost:8000/docs>，通过 `GET /health`、`GET /health/deps` 检查服务及数据库连接。Chat API 将在后续编排 PR 接入。
 
+## 聊天模型兼容配置
+
+聊天模型为 `deepseek-flash`，显式关闭 thinking。Supervisor 与摘要模型保持温度未指定，保留原工具绑定行为；只在具体专项模型需要时单独指定温度。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。

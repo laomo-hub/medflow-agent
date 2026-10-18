@@ -1,7 +1,7 @@
 from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.redis import AsyncRedisSaver
 from langchain.agents import create_agent
-from langchain_deepseek.chat_models import ChatDeepSeek
+from langchain.chat_models import init_chat_model
 
 from src.agents.store_tools import save_memory, search_memory
 from src.infra.milvus_client import get_milvus_client_alias
@@ -52,7 +52,7 @@ async def create_supervisor_agent():
 
     # 4. 创建 Agent
     agent = create_agent(
-        model="deepseek-chat",
+        model=init_chat_model("deepseek-flash", model_provider="deepseek", extra_body={"thinking": {"type": "disabled"}}),
         tools=tools,
         system_prompt=(
             "你是医流（MedFlow）的智能助手。"
@@ -61,7 +61,7 @@ async def create_supervisor_agent():
         ),
         middleware=[
             SummarizationMiddleware( # 会话总结压缩
-                model="deepseek-chat",
+                model=init_chat_model("deepseek-flash", model_provider="deepseek", extra_body={"thinking": {"type": "disabled"}}),
                 trigger=[
                     ("tokens", 4000),  # token数达到4k时触发
                     ("messages", 6),  # 或消息数达到 4条时触发
