@@ -74,6 +74,10 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 初始化症状向量索引：`python scripts/init_symptom_index.py`，每批保持 **20** 条；该命令调用配置的向量化服务。此 PR 提供工作流模块，统一 Chat 路由在后续 PR 接入。
 
+## 文档入库与检索
+
+`src/agents/knowledge/` 提供 MinerU 解析、文档分块、Milvus 入库、文档/图谱检索及检索增强模块。使用解析服务前配置 `MINERU_API_URL`、`MINERU_BACKEND` 和 `MINERU_TIMEOUT`。检索模块可单独导入，专项 Agent 将在下一 PR 接入。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
