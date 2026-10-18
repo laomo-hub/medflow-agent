@@ -2,11 +2,10 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.redis import AsyncRedisSaver
 from langchain.agents import create_agent
 from langchain_deepseek.chat_models import ChatDeepSeek
-from pywin.framework.toolmenu import tools
 
-from agents.store_tools import save_memory, search_memory
-from infra.milvus_client import get_milvus_client_alias
-from infra.milvus_store import MilvusStore
+from src.agents.store_tools import save_memory, search_memory
+from src.infra.milvus_client import get_milvus_client_alias
+from src.infra.milvus_store import MilvusStore
 from src.infra.redis_cache import get_checkpointer_redis
 from dotenv import load_dotenv
 load_dotenv()
@@ -56,7 +55,7 @@ async def create_supervisor_agent():
         model="deepseek-chat",
         tools=tools,
         system_prompt=(
-            "你是天宫医疗的智能助手。"
+            "你是医流（MedFlow）的智能助手。"
             "当用户提到重要的个人信息或病史时，使用 save_memory 工具记住它。"
             "当需要回忆用户历史信息时，使用 search_memory 工具检索。"
         ),

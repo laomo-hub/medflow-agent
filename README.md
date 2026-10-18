@@ -1,35 +1,69 @@
-# chenguang-agent-
+# MedFlow Agent（医流智能助手）
 
-#### 介绍
-《天宫医疗-智能体》集中于解决医疗领域的 Agent 业务构建。包括：
-1. 智慧问诊 Agent
-2. 报告解读 Agent
-3. 药物 Agent
-4. 知识文档 Agent
-5. 运营数据 Agent
+面向医疗场景的智能体开发项目。本分支先整理基础设施、运行配置和初始化入口，后续 PR 逐步加入专项 Agent 与 Chat API。
 
-#### 软件架构
-软件架构说明
+仓库：<https://github.com/laomo-hub/medflow-agent>
 
+## 安装与配置
 
-#### 安装教程
-
-```sh
-# 创建环境
-conda create -n tiangong python=3.13
-# 激活环境
-conda activate tiangong
-
-# 安装依赖
+```powershell
+git clone https://github.com/laomo-hub/medflow-agent.git
+cd medflow-agent
+conda create -n medflow python=3.13
+conda activate medflow
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
+编辑 `.env`，填入自己的 API Key 和服务地址。`.env`、`docker/`、`data/`、`.backups/`、本地测试及迁移目录不提交 Git。保留的历史提交可能仍包含此前版本的数据文件。
 
-## 指定端口启动
+## 基础设施
+
+```powershell
+docker compose up -d
+docker compose ps
 ```
-uvicorn src.main:app --port 8080 --reload
+
+Compose 项目为 `medflow-agent`，容器使用 `medflow-` 前缀。PostgreSQL、Redis Stack、Neo4j、Milvus 及 MinIO 的持久化数据位于项目 `docker/` 目录；Attu 通过 Compose 网络内的 `milvus:19530` 连接 Milvus。
+
+| 服务 | 地址 |
+|---|---|
+| PostgreSQL | localhost:5432 |
+| Redis / RedisInsight | localhost:6379 / http://localhost:8001 |
+| MinIO | http://localhost:9000 / http://localhost:9001 |
+| Milvus / Attu | localhost:19530 / http://localhost:3000 |
+| Neo4j | http://localhost:7474 / bolt://localhost:7687 |
+
+停止服务使用 `docker compose down`。迁移项目目录时保留 `docker/`，并从新目录重建容器挂载。
+
+## 首次建表与基础数据
+
+仓库不包含本地 `alembic/` 迁移脚本；首次部署使用模型生成表结构：
+
+```powershell
+python -m scripts.init_schema
+python -m scripts.init_schema --apply
 ```
 
-## env配置
-把 .env.example 复制一份 叫 .env ，修改为自己的信息即可
+第一条仅打印 PostgreSQL 建表 SQL，第二条创建尚不存在的表。此入口不修改已有表的字段，也不导入业务数据；已有数据库升级应另行准备结构变更方案。
 
+自行准备课程来源数据并放到 `data/raw/medical.json`，再按需执行：
+
+```powershell
+python scripts/init_postgres.py
+python scripts/init_neo4j.py
+```
+
+`data/` 是本地输入目录，不随仓库分发。
+
+## 启动与检查
+
+```powershell
+uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+访问 <http://localhost:8000/docs>，通过 `GET /health`、`GET /health/deps` 检查服务及数据库连接。Chat API 将在后续编排 PR 接入。
+
+## 来源与许可证
+
+项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
