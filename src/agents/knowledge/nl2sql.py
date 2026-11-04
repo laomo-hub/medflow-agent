@@ -50,9 +50,13 @@ async def search_sql_raw(
     question: str,
     llm: BaseChatModel,
     db: AsyncSession,
-)-> list[dict]:
-    """NL2SQL：LLM 生成 SQL → 安全校验 → 执行（带重试）→ LLM 整合。"""
+) -> tuple[list[dict] | str, str]:
+    """
+    NL2SQL：LLM 生成 SQL → 安全校验 → 执行（带重试）。
+    返回 (data_or_error_msg, executed_sql)
+    """
     error_hint = ""
+    executed_sql = ""
     for attempt in range(MAX_SQL_RETRIES + 1):
         raw_sql = await _generate_sql(question, llm, error_hint)
         logger.info(f"NL2SQL SQL (attempt {attempt + 1}): {raw_sql}")
@@ -60,8 +64,9 @@ async def search_sql_raw(
         valid, validated = _validate_sql(raw_sql)
         if not valid:
             logger.warning(f"SQL 安全校验失败: {validated}")
-            return f"查询被安全策略拦截：{validated}。请换一种方式提问。"
+            return f"查询被安全策略拦截：{validated}。请换一种方式提问。", raw_sql
 
+        executed_sql = validated
         try:
             query_result = await asyncio.wait_for(
                 db.execute(text(validated)),
@@ -72,28 +77,32 @@ async def search_sql_raw(
             break
         except asyncio.TimeoutError:
             logger.warning(f"SQL 执行超时 ({SQL_TIMEOUT_SECONDS}s): {validated}")
-            return f"查询执行超时（{SQL_TIMEOUT_SECONDS}秒），请简化查询条件后重试。"
+            return f"查询执行超时（{SQL_TIMEOUT_SECONDS}秒），请简化查询条件后重试。", validated
         except Exception as e:
             error_hint = str(e)
             logger.warning(f"SQL 执行失败 (attempt {attempt + 1}): {e}")
             if attempt == MAX_SQL_RETRIES:
-                return "数据查询执行失败，请尝试换一种方式提问。"
+                return "数据查询执行失败，请尝试换一种方式提问。", validated
     else:
-        return "数据查询执行失败，请尝试换一种方式提问。"
+        return "数据查询执行失败，请尝试换一种方式提问。", executed_sql
 
     if not data:
-        return "未查询到相关数据。"
+        return "未查询到相关数据。", executed_sql
 
-    return data
+    return data, executed_sql
+
 
 async def search_sql(
     question: str,
     llm: BaseChatModel,
     db: AsyncSession,
 ) -> str:
-    data = await search_sql_raw(question, llm, db)
+    data, sql = await search_sql_raw(question, llm, db)
+
+    if isinstance(data, str):
+        return data
+
     result_str = json.dumps(data, ensure_ascii=False, indent=2, default=str)
-    # 增强生成回答
-    prompt = SQL_QA_PROMPT.format(question=question, sql=validated, result=result_str)
+    prompt = SQL_QA_PROMPT.format(question=question, sql=sql, result=result_str)
     response = await llm.ainvoke([SystemMessage(content=prompt)])
     return response.content
