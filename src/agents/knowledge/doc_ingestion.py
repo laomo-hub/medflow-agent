@@ -153,7 +153,7 @@ async def ingest_file(
     if not texts:
         return 0
 
-    batch_size = 50
+    batch_size = 20
     all_data = []
 
     for i in range(0, len(texts), batch_size):
