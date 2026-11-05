@@ -27,6 +27,7 @@ from loguru import logger
 from contextlib import asynccontextmanager
 from src.api.routers.chat import router as chat_router
 from src.api.routers.knowledge import router as knowledge_router
+from src.nl2sql.router import router as bi_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logger() # 配置日志组件
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     # app.include_router(user_router, prefix="/api/v1")
     app.include_router(chat_router)
     app.include_router(knowledge_router)
+    app.include_router(bi_router)
 
     return app
 
