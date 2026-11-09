@@ -126,6 +126,23 @@ python -c "from src.rag.evaluation.trulens_config import launch_dashboard; launc
 
 题集及本地准备脚本继续留在本地，`data/` 保持忽略。本模块不自动运行题集、调用模型、导入数据或启动 Dashboard；实际评测的模型调用与记录写入由本地调用方显式触发。返回应用开发时使用 `conda activate medflow`。
 
+## 知识 Agent 通道评测
+
+`src/agents/knowledge/evaluation/` 为现有知识检索提供独立的 `TrackedKnowledge` 包装，支持 `doc_rag`、`graph_rag`、`nl2sql`、`fusion` 和 `prescription_review` 五个通道，不自动接入聊天或现有 Agent 调用。继续使用上面的独立 `medflow-eval` 环境；更新后重新安装 `requirements-eval.txt` 并运行 `python -m pip check`，其中 Neo4j 驱动沿用 `neo4j==5.28.2`，SQLAlchemy 异步模块的导入依赖沿用 `greenlet==3.3.2`。
+
+主要入口：
+
+- `src.agents.knowledge.evaluation.metrics.build_all_metrics(provider)`：构造三项 RAG 指标和一项有害性指标。
+- `src.agents.knowledge.evaluation.tracked_knowledge.TrackedKnowledge`：由调用方传入模型、向量模型、Milvus、Neo4j 及可选 SQL 会话，异步调用 `retrieve`、`generate`、`query`。
+- `src.agents.knowledge.evaluation.trulens_config.get_llm_provider()`：复用 RAG 评测的 DeepSeek Flash Provider，保持 `thinking.type=disabled`。
+- `src.agents.knowledge.evaluation.trulens_config.get_trulens_session()` 和 `launch_dashboard()`：沿用独立的 `trulens_eval` 数据库及默认 8501 端口。
+
+指标中的“安全性”名称沿用原实现，实际调用 `harmfulness_with_cot_reasons(text=回答)`，返回的是 **有害程度：0 表示无害，1 表示有害，分数越低越好**。它与前三项指标的方向不同，不能把高分解释为更安全，也不能据此认定医疗建议或用药建议正确。
+
+`prescription_review` 通道在这里仅包装药品文档与图谱检索，不执行完整处方审核；`role` 用于生成提示词，不为 SQL 增加权限过滤。`nl2sql` 需要调用方提供已配置的异步数据库会话，缺少会话时返回不可用提示；本包装不创建业务连接或配置异步驱动。实际连接、身份权限及评测数据由调用方另行准备。
+
+本模块不自动运行评测、连接数据库、初始化表或启动 Dashboard，题集及准备脚本继续保留在本地。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
