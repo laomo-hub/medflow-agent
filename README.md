@@ -94,6 +94,38 @@ uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
 
 本地 `test/` 按项目忽略策略不随仓库发布；维护者可运行 `python -m pytest test/test_flash_thinking.py -q` 做离线回归，实际 PR 验证结果记录在 PR 说明。长期记忆样例输入保留“糖尿病史”。
 
+## RAG 评测（独立环境）
+
+`src/rag/evaluation/` 提供答案相关性、上下文相关性和有据性指标，以及 `RAGEngine` 的检索、生成和查询追踪包装。评测模块由本地评测调用方使用；现有知识 Agent 和上传流程保持原有行为。
+
+评测依赖单独锁定在 `requirements-eval.txt`，验证目标为 Windows x64 / Python 3.13。该清单包含运行及传递依赖；请在独立环境安装，不与应用的 `requirements.txt` 混装：
+
+```powershell
+conda create -n medflow-eval python=3.13
+conda activate medflow-eval
+python -m pip install -r requirements-eval.txt
+python -m pip check
+```
+
+应用继续使用原 `medflow` 环境。独立评测环境使用兼容 TruLens 的 Plotly、Rich、psutil 和 protobuf 版本，应用依赖清单保持不变。
+
+在项目根目录运行评测，沿用 `.env` 中的 `CHAT_MODEL=deepseek-flash` 和 `DEEPSEEK_API_KEY`。评审模型通过 DeepSeek 的 OpenAI 兼容接口调用，显式设置 `thinking.type=disabled`；评测 Provider 支持嵌套请求参数并额外放行 `extra_body`，确保该设置经过 TruLens 参数过滤后仍会发送。检索所需的向量化、重排和 Milvus 配置继续使用现有设置。
+
+主要入口：
+
+- `build_rag_triad_metrics(provider)`：构造三个评测指标。
+- `TrackedRAG(engine)`：包装调用方创建的 `RAGEngine`，提供 `retrieve`、`generate`、`query`。
+- `get_trulens_session()`：连接独立的 PostgreSQL `trulens_eval` 数据库。
+- `launch_dashboard()`：启动 TruLens Dashboard，默认端口为 8501。
+
+真实评测前需自行准备 `trulens_eval` 数据库，并确认 `.env` 中的 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD` 可访问它。首次连接可能由 TruLens 初始化其记录表；上述安装命令不创建评测数据库。完成准备后可显式启动 Dashboard：
+
+```powershell
+python -c "from src.rag.evaluation.trulens_config import launch_dashboard; launch_dashboard()"
+```
+
+题集及本地准备脚本继续留在本地，`data/` 保持忽略。本模块不自动运行题集、调用模型、导入数据或启动 Dashboard；实际评测的模型调用与记录写入由本地调用方显式触发。返回应用开发时使用 `conda activate medflow`。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
