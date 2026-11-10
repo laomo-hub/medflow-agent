@@ -3,6 +3,8 @@
 from __future__ import annotations
 import os
 import tempfile
+from typing import Literal
+from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from pydantic import BaseModel
 from loguru import logger
@@ -131,6 +133,31 @@ async def list_documents():
         return {"documents": docs, "total": len(docs)}
     except Exception as e:
         raise HTTPException(500, f"查询失败: {e}")
+
+
+class PublicDatasetImportRequest(BaseModel):
+    dataset: Literal["cmirb", "dialogue", "medqa"]
+
+
+@router.post("/public-datasets/imports", status_code=202)
+async def submit_public_dataset_import(req: PublicDatasetImportRequest):
+    """Schedule one optional public dataset import."""
+    from src.infra.public_data_tasks import JobAlreadyRunning, submit
+    try:
+        task_id = await submit(req.dataset)
+    except JobAlreadyRunning:
+        raise HTTPException(status_code=409, detail="An import for this dataset is already running")
+    return {"task_id": task_id, "dataset": req.dataset, "status": "pending"}
+
+
+@router.get("/public-datasets/imports/{task_id}")
+async def get_public_dataset_import(task_id: UUID):
+    """Return status and progress for a public dataset import."""
+    from src.infra.public_data_tasks import get_job
+    job = await get_job(task_id.hex)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Import task not found")
+    return job
 
 
 # ── 反馈闭环 ─────────────────────────────────────────────────────────────
