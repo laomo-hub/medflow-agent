@@ -143,6 +143,16 @@ python -c "from src.rag.evaluation.trulens_config import launch_dashboard; launc
 
 本模块不自动运行评测、连接数据库、初始化表或启动 Dashboard，题集及准备脚本继续保留在本地。
 
+## 公共医学数据导入
+
+此功能为可选的知识库管理入口，需在运行 API 的应用环境中另行安装 `python -m pip install -r requirements-data.txt` 并执行 `python -m pip check`。依赖清单约束沿用主 `requirements.txt`，不要安装到独立评测环境。需要 Redis；文档入库还需要 Milvus 和 `DASHSCOPE_API_KEY`。
+
+`POST /api/v1/knowledge/public-datasets/imports` 提交 JSON，例如 `{"dataset":"cmirb"}`；可选 `cmirb`、`dialogue`、`medqa`，返回 202 和 `task_id`。`GET /api/v1/knowledge/public-datasets/imports/{task_id}` 返回状态、阶段、完成数量、总数及结果或错误。状态包括 `pending`、`running`、`completed`、`failed` 和 `interrupted`。同一数据集正在运行时返回 409；任务状态保留七天。
+
+CMIRB 和中文医患对话会下载数据，以每批 20 条向量化后写入 Milvus `knowledge_docs`；已有同源数据时拒绝覆盖。MedQA 中文题集保存到忽略的 `data/eval/medqa_zh.json`，文件存在时拒绝覆盖。MedQA 不连接 Milvus 或调用向量模型。原文最多取前 2000 字符，知识语料以 `literature` 类型标记。接口需要外部数据和向量服务，实际调用可能耗时并产生费用。
+
+导入由 API 进程内后台任务执行，Redis 保存状态和同数据集锁。进程退出或租约失效后查询会显示 `interrupted`，不会自动续跑。Milvus 分批写入不是事务，失败或中断可能保留部分数据；重试前先检查现有数据。锁只协调使用此接口的任务，不能阻止其他写入方式；导入前须确认备份与外部并发写入情况。当前知识路由未为此接口增加鉴权，应仅在受控环境使用。
+
 ## 来源与许可证
 
 项目基于[原始课程项目](https://gitee.com/leifengyang/tiangong-agent)学习与扩展；许可证见 [LICENSE](LICENSE)。
