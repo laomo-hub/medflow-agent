@@ -6,7 +6,7 @@ import tempfile
 from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from loguru import logger
 from langchain_community.embeddings import DashScopeEmbeddings
 from pymilvus import MilvusClient
@@ -137,6 +137,14 @@ async def list_documents():
 
 class PublicDatasetImportRequest(BaseModel):
     dataset: Literal["cmirb", "dialogue", "medqa"]
+    resume: bool = False
+    expected_embedding_model: str | None = None
+
+    @model_validator(mode="after")
+    def validate_resume(self):
+        if self.resume and (self.dataset != "cmirb" or not self.expected_embedding_model or not self.expected_embedding_model.strip()):
+            raise ValueError("CMIRB resume requires expected_embedding_model")
+        return self
 
 
 @router.post("/public-datasets/imports", status_code=202)
@@ -144,7 +152,7 @@ async def submit_public_dataset_import(req: PublicDatasetImportRequest):
     """Schedule one optional public dataset import."""
     from src.infra.public_data_tasks import JobAlreadyRunning, submit
     try:
-        task_id = await submit(req.dataset)
+        task_id = await submit(req.dataset, resume=req.resume, expected_embedding_model=req.expected_embedding_model)
     except JobAlreadyRunning:
         raise HTTPException(status_code=409, detail="An import for this dataset is already running")
     return {"task_id": task_id, "dataset": req.dataset, "status": "pending"}

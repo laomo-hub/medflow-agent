@@ -61,9 +61,11 @@ class LeaseLost(Exception):
     pass
 
 
-async def submit(dataset: str) -> str:
+async def submit(dataset: str, resume: bool = False, expected_embedding_model: str | None = None) -> str:
     if dataset not in {"cmirb", "dialogue", "medqa"}:
         raise ValueError("Unknown dataset")
+    if resume and (dataset != "cmirb" or not expected_embedding_model or not expected_embedding_model.strip()):
+        raise ValueError("CMIRB resume requires expected_embedding_model")
     redis = await get_redis_client()
     task_id = uuid.uuid4().hex
     created = await redis.eval(_CREATE, 2, _lock(dataset), _job(task_id), task_id,
@@ -71,7 +73,7 @@ async def submit(dataset: str) -> str:
     if not created:
         raise JobAlreadyRunning(dataset)
     try:
-        task = asyncio.create_task(_run(redis, dataset, task_id))
+        task = asyncio.create_task(_run(redis, dataset, task_id, resume, expected_embedding_model))
         _RUNNING.add(task)
         task.add_done_callback(_RUNNING.discard)
     except Exception:
@@ -93,7 +95,7 @@ async def get_job(task_id: str) -> dict | None:
     return data
 
 
-async def _run(redis, dataset: str, task_id: str) -> None:
+async def _run(redis, dataset: str, task_id: str, resume: bool = False, expected_embedding_model: str | None = None) -> None:
     lock, job = _lock(dataset), _job(task_id)
     lost = asyncio.Event()
 
@@ -128,11 +130,16 @@ async def _run(redis, dataset: str, task_id: str) -> None:
     beat = asyncio.create_task(heartbeat())
     try:
         await update(status="running", stage="starting")
-        result = await import_dataset(dataset, report, check_owner)
+        if resume:
+            result = await import_dataset(dataset, report, check_owner, resume=True,
+                                          expected_embedding_model=expected_embedding_model)
+        else:
+            result = await import_dataset(dataset, report, check_owner)
         await check_owner()
         await update(status="completed", stage="completed", result=json.dumps(result, ensure_ascii=False))
-    except ExistingDataError:
-        await update(status="failed", stage="failed", error="Existing data found; no overwrite performed")
+    except ExistingDataError as exc:
+        message = str(exc) if resume else "Existing data found; no overwrite performed"
+        await update(status="failed", stage="failed", error=message)
     except LeaseLost:
         # Polling reports interruption once the expired lease is observed.
         pass

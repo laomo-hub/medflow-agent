@@ -151,6 +151,8 @@ python -c "from src.rag.evaluation.trulens_config import launch_dashboard; launc
 
 CMIRB 和中文医患对话会下载数据，以每批 20 条向量化后写入 Milvus `knowledge_docs`；已有同源数据时拒绝覆盖。MedQA 中文题集保存到忽略的 `data/eval/medqa_zh.json`，文件存在时拒绝覆盖。MedQA 不连接 Milvus 或调用向量模型。原文最多取前 2000 字符，知识语料以 `literature` 类型标记。接口需要外部数据和向量服务，实际调用可能耗时并产生费用。
 
+CMIRB 可以显式续传：`POST /api/v1/knowledge/public-datasets/imports` 传入 `{"dataset":"cmirb","resume":true,"expected_embedding_model":"原导入使用的模型名"}`。续传固定数据源版本 `3844e2255fbe12c43844927e1e4930b3af911667`，要求当前模型与给定名称一致；会在写入前核对现有记录 ID、分组、位置和文本，相同记录跳过、缺失记录补入，发现不一致则停止。历史模型名需要调用方依据原导入记录确认，数据库没有保存该信息。默认请求仍拒绝已有同源数据；dialogue 和 medqa 暂不支持续传。重复检查使用强一致读取，但无法阻止本接口以外的并发写入；续传前应避免外部写入同一数据源。
+
 导入由 API 进程内后台任务执行，Redis 保存状态和同数据集锁。进程退出或租约失效后查询会显示 `interrupted`，不会自动续跑。Milvus 分批写入不是事务，失败或中断可能保留部分数据；重试前先检查现有数据。锁只协调使用此接口的任务，不能阻止其他写入方式；导入前须确认备份与外部并发写入情况。当前知识路由未为此接口增加鉴权，应仅在受控环境使用。
 
 ## 来源与许可证
