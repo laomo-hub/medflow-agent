@@ -11,6 +11,7 @@ from src.core.config import get_settings
 
 BATCH_SIZE = 20
 GROUP_SIZE = 5000
+CMIRB_RESUME_REVISION = "3844e2255fbe12c43844927e1e4930b3af911667"
 COLLECTION_NAME = "knowledge_docs"
 EVAL_FILE = Path(__file__).resolve().parents[3] / "data" / "eval" / "medqa_zh.json"
 
@@ -28,6 +29,11 @@ def _load_dataset(dataset: str):
     if dataset == "medqa":
         return load_dataset("fzkuji/MedQA", "med_qa_zh_source")
     raise ValueError("Unknown dataset")
+
+
+def _load_cmirb_snapshot():
+    from datasets import load_dataset
+    return load_dataset("CMIRB/MedicalRetrieval", "corpus", split="corpus", revision=CMIRB_RESUME_REVISION)
 
 
 def _texts(dataset: str, data) -> list[str]:
@@ -105,11 +111,129 @@ def _check_absent(client, doc_ids: list[str]) -> None:
             raise ExistingDataError("Data for this dataset already exists; no overwrite performed")
 
 
-async def import_dataset(dataset: str, report, check_owner) -> dict:
+def _existing_rows(client, ids: list[str], expected: dict[str, tuple[str, int, str]]) -> set[str]:
+    """Strong-read expected IDs; reject duplicates or any mismatched existing content."""
+    if not ids:
+        return set()
+    rows = client.get(collection_name=COLLECTION_NAME, ids=ids,
+                      output_fields=["id", "doc_id", "chunk_index", "text"],
+                      consistency_level="Strong")
+    found = set()
+    for row in rows:
+        ident = row["id"]
+        if ident in found or ident not in expected:
+            raise ExistingDataError("Duplicate or unexpected existing ID")
+        doc_id, pos, text = expected[ident]
+        if row.get("doc_id") != doc_id or row.get("chunk_index") != pos or row.get("text") != text:
+            raise ExistingDataError("Existing record differs from pinned source")
+        found.add(ident)
+    return found
+
+
+def _group_count(client, doc_id: str) -> int:
+    result = client.query(collection_name=COLLECTION_NAME, filter=f'doc_id == "{doc_id}"',
+                          output_fields=["count(*)"], consistency_level="Strong")
+    return int(result[0]["count(*)"])
+
+
+async def _embed_with_retry(embedding, batch, check_owner):
+    for attempt in range(3):
+        await check_owner()
+        try:
+            return await embedding.aembed_documents(batch)
+        except (ConnectionError, TimeoutError, OSError):
+            if attempt == 2:
+                raise
+            await asyncio.sleep(2 ** attempt)
+
+
+async def _resume_cmirb(client, embedding, texts, report, check_owner) -> dict:
+    expected = {}
+    groups = []
+    for offset in range(0, len(texts), GROUP_SIZE):
+        doc_id = _doc_id("cmirb", offset)
+        group = texts[offset:offset + GROUP_SIZE]
+        ids = []
+        for pos, value in enumerate(group):
+            ident = f"{doc_id}_{pos}"
+            expected[ident] = (doc_id, pos, value[:65000])
+            ids.append(ident)
+        groups.append((offset, doc_id, ids))
+
+    present = set()
+    # Validate every group before any write, including unknown or duplicated IDs.
+    for offset, doc_id, ids in groups:
+        group_found = set()
+        for start in range(0, len(ids), 500):
+            await check_owner()
+            found = await asyncio.to_thread(_existing_rows, client, ids[start:start + 500], expected)
+            group_found.update(found)
+        await check_owner()
+        count = await asyncio.to_thread(_group_count, client, doc_id)
+        if count != len(group_found):
+            raise ExistingDataError("Unexpected or duplicate records in source group")
+        present.update(group_found)
+        await report("checking", min(offset + len(ids), len(texts)), len(texts))
+
+    skipped = len(present)
+    inserted_total = 0
+    await report("inserting", skipped, len(texts))
+    for offset, doc_id, ids in groups:
+        for pos in range(0, len(ids), BATCH_SIZE):
+            await check_owner()
+            candidates = [ident for ident in ids[pos:pos + BATCH_SIZE] if ident not in present]
+            if not candidates:
+                continue
+            # A second read detects matching or conflicting writes made during preflight.
+            found = await asyncio.to_thread(_existing_rows, client, candidates, expected)
+            present.update(found)
+            skipped += len(found)
+            candidates = [ident for ident in candidates if ident not in found]
+            if not candidates:
+                await report("inserting", skipped + inserted_total, len(texts))
+                continue
+            vectors = await _embed_with_retry(embedding, [expected[ident][2] for ident in candidates], check_owner)
+            if len(vectors) != len(candidates):
+                raise ValueError("Embedding count does not match input")
+            await check_owner()
+            # Recheck immediately before insertion; external writers are not locked by this API.
+            found = await asyncio.to_thread(_existing_rows, client, candidates, expected)
+            present.update(found)
+            skipped += len(found)
+            rows = []
+            for ident, vector in zip(candidates, vectors):
+                if ident in found:
+                    continue
+                _, index, value = expected[ident]
+                rows.append({"id": ident, "doc_id": doc_id, "doc_name": f"CMIRB医学检索语料_{offset // GROUP_SIZE + 1}",
+                             "doc_type": "literature", "category": "医学文献", "page_number": 0,
+                             "chunk_index": index, "text": value, "embedding": vector})
+            if rows:
+                await check_owner()
+                result = await asyncio.to_thread(client.insert, collection_name=COLLECTION_NAME, data=rows)
+                count = result.get("insert_count", 0)
+                if not isinstance(count, int) or not 0 <= count <= len(rows):
+                    raise ValueError("Invalid Milvus insert count")
+                inserted_total += count
+                await report("inserting", skipped + inserted_total, len(texts))
+                # Never automatically retry an ambiguous write; a new resume rechecks IDs.
+                if count != len(rows):
+                    raise ValueError("Incomplete Milvus insert")
+            else:
+                await report("inserting", skipped + inserted_total, len(texts))
+    return {"records": skipped + inserted_total, "inserted": inserted_total,
+            "skipped": skipped, "destination": COLLECTION_NAME, "revision": CMIRB_RESUME_REVISION}
+
+
+async def import_dataset(dataset: str, report, check_owner, resume: bool = False, expected_embedding_model: str | None = None) -> dict:
     if dataset == "medqa" and EVAL_FILE.exists():
         raise ExistingDataError("MedQA output already exists")
     await report("downloading", 0, 0)
-    data = await asyncio.to_thread(_load_dataset, dataset)
+    if resume and (dataset != "cmirb" or not expected_embedding_model):
+        raise ValueError("CMIRB resume requires expected_embedding_model")
+    if resume and get_settings().EMBEDDING_MODEL != expected_embedding_model:
+        raise ValueError("Configured embedding model does not match expected model")
+    data = await asyncio.to_thread(_load_cmirb_snapshot if resume else _load_dataset, *(() if resume else (dataset,)))
     await check_owner()
     if dataset == "medqa":
         records = await asyncio.to_thread(_medqa_records, data)
@@ -128,6 +252,8 @@ async def import_dataset(dataset: str, report, check_owner) -> dict:
     await check_owner()
     client, embedding = await asyncio.to_thread(_make_deps)
     try:
+        if resume:
+            return await _resume_cmirb(client, embedding, texts, report, check_owner)
         offsets = list(range(0, len(texts), GROUP_SIZE))
         await asyncio.to_thread(_check_absent, client, [_doc_id(dataset, i) for i in offsets])
         done = 0
